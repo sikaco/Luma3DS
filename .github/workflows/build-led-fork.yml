@@ -25,12 +25,19 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           export PATH="$DEVKITARM/bin:$PATH"
           echo "$DEVKITARM/bin" >> "$GITHUB_PATH"
+
+          # devkitpro/devkitarm only contains the ARM toolchain; Luma also needs
+          # the 3DS SDK/tooling (libctru, makerom, etc.).
+          dkp-pacman -Syyu --noconfirm
+          dkp-pacman -S --needed --noconfirm 3ds-dev
+
           if ! command -v firmtool >/dev/null 2>&1; then
             apt-get update
             apt-get install -y --no-install-recommends python3-pip python3-setuptools git
             python3 -m pip install --break-system-packages --no-cache-dir -U \
               git+https://github.com/TuxSH/firmtool.git
           fi
+
           command -v arm-none-eabi-gcc
           command -v makerom
           command -v firmtool
