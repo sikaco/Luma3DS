@@ -23,17 +23,28 @@ jobs:
         run: |
           set -euxo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          export PATH="$DEVKITARM/bin:$PATH"
+          export PATH="$DEVKITARM/bin:/usr/local/bin:$PATH"
           echo "$DEVKITARM/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/bin" >> "$GITHUB_PATH"
 
-          # devkitpro/devkitarm only contains the ARM toolchain; Luma also needs
-          # the 3DS SDK/tooling (libctru, makerom, etc.).
           dkp-pacman -Syyu --noconfirm
           dkp-pacman -S --needed --noconfirm 3ds-dev
 
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl unzip python3-pip python3-setuptools git
+
+          if ! command -v makerom >/dev/null 2>&1; then
+            curl -fsSL \
+              https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip \
+              -o /tmp/makerom.zip
+            rm -rf /tmp/makerom
+            mkdir -p /tmp/makerom
+            unzip -q /tmp/makerom.zip -d /tmp/makerom
+            install -m 0755 "$(find /tmp/makerom -type f -name makerom -print -quit)" /usr/local/bin/makerom
+          fi
+
           if ! command -v firmtool >/dev/null 2>&1; then
-            apt-get update
-            apt-get install -y --no-install-recommends python3-pip python3-setuptools git
             python3 -m pip install --break-system-packages --no-cache-dir -U \
               git+https://github.com/TuxSH/firmtool.git
           fi
@@ -41,6 +52,7 @@ jobs:
           command -v arm-none-eabi-gcc
           command -v makerom
           command -v firmtool
+          makerom -h >/dev/null 2>&1 || true
 
       - name: Apply LED-control overlay
         shell: bash
