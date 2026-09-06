@@ -1,0 +1,120 @@
+diff --git a/sysmodules/rosalina/source/menus/sysconfig.c b/sysmodules/rosalina/source/menus/sysconfig.c
+--- a/sysmodules/rosalina/source/menus/sysconfig.c
++++ b/sysmodules/rosalina/source/menus/sysconfig.c
+@@ -31,6 +31,7 @@
+ #include "utils.h"
+ #include "ifile.h"
+ #include "luminance.h"
++#include "led_control.h"
+ 
+ Menu sysconfigMenu = {
+     "System configuration menu",
+@@ -38,7 +39,7 @@ Menu sysconfigMenu = {
+     {
+         { "Control volume", METHOD, .method=&SysConfigMenu_AdjustVolume},
+         { "Control Wireless connection", METHOD, .method = &SysConfigMenu_ControlWifi },
+-        { "Toggle LEDs", METHOD, .method = &SysConfigMenu_ToggleLEDs },
++        { "LED control", MENU, .menu = &ledControlMenu },
+         { "Toggle Wireless", METHOD, .method = &SysConfigMenu_ToggleWireless },
+         { "Toggle Power Button", METHOD, .method=&SysConfigMenu_TogglePowerButton },
+         { "Toggle power to card slot", METHOD, .method=&SysConfigMenu_ToggleCardIfPower},
+diff --git a/sysmodules/rosalina/source/menu.c b/sysmodules/rosalina/source/menu.c
+--- a/sysmodules/rosalina/source/menu.c
++++ b/sysmodules/rosalina/source/menu.c
+@@ -36,6 +36,7 @@
+ #include "plugin.h"
+ #include "menus/screen_filters.h"
+ #include "shell.h"
++#include "led_control.h"
+ 
+ //#define ROSALINA_MENU_SELF_SCREENSHOT 1 // uncomment this to enable the feature
+@@ -351,6 +352,8 @@ void menuThreadMain(void)
+     while(!preTerminationRequested)
+     {
+         svcSleepThread(50 * 1000 * 1000LL);
++
++        LedControl_Update();
+         if (menuShouldExit)
+             continue;
+ 
+@@ -531,6 +534,7 @@ void menuShow(Menu *root)
+     do
+     {
+         u32 pressed = waitInputWithTimeout(1000);
++        LedControl_Update();
+         numItems = menuCountItems(currentMenu);
+ 
+         if(!menuComboReleased && (scanHeldKeys() & menuCombo) != menuCombo)
+diff --git a/sysmodules/rosalina/source/main.c b/sysmodules/rosalina/source/main.c
+--- a/sysmodules/rosalina/source/main.c
++++ b/sysmodules/rosalina/source/main.c
+@@ -42,6 +42,7 @@
+ #include "draw.h"
+ #include "bootdiag.h"
+ #include "shell.h"
++#include "led_control.h"
+ 
+ #include "task_runner.h"
+ #include "plugin.h"
+@@ -136,12 +137,18 @@ static void handleSleepNotification(u32 notificationId)
+             PTMSYSM_ReplyToSleepQuery(miniSocEnabled); // deny sleep request if we have network stuff running
+             break;
+         case PTMNOTIFID_GOING_TO_SLEEP:
++            LedControl_OnGoingToSleep();
++            PTMSYSM_NotifySleepPreparationComplete(ackValue);
++            break;
+         case PTMNOTIFID_SLEEP_ALLOWED:
+         case PTMNOTIFID_FULLY_WAKING_UP:
+         case PTMNOTIFID_HALF_AWAKE:
+             PTMSYSM_NotifySleepPreparationComplete(ackValue);
+             break;
+         case PTMNOTIFID_SLEEP_DENIED:
++            LedControl_SetSleeping(false);
++            menuShouldExit = false;
++            break;
+         case PTMNOTIFID_FULLY_AWAKE:
++            LedControl_SetSleeping(false);
+             menuShouldExit = false;
+             break;
+         default:
+@@ -158,15 +165,23 @@ static void handleShellNotification(u32 notificationId)
+         // and shell close, then NS demuxes it and fires 0x213 and 0x214.
+         handleShellOpened();
++        LedControl_SetSleeping(false);
+         menuShouldExit = false;
+     } else {
+         // Shell closed
++        LedControl_SetSleeping(true);
+         menuShouldExit = true;
+     }
+ 
+ }
+ 
++static void handleLedPowerNotification(u32 notificationId)
++{
++    (void)notificationId;
++    LedControl_RequestUpdate();
++}
++
+ static void handlePreTermNotification(u32 notificationId)
+ {
+     (void)notificationId;
+@@ -229,6 +244,10 @@ static const ServiceManagerNotificationEntry notifications[] = {
+     { PTMNOTIFID_FULLY_WAKING_UP,   handleSleepNotification                 },
+     { PTMNOTIFID_FULLY_AWAKE,       handleSleepNotification                 },
+     { PTMNOTIFID_HALF_AWAKE,        handleSleepNotification                 },
++    { 0x20D,                        handleLedPowerNotification               }, // charger removed
++    { 0x20E,                        handleLedPowerNotification               }, // charger plugged in
++    { 0x211,                        handleLedPowerNotification               }, // battery very low (5%)
++    { 0x212,                        handleLedPowerNotification               }, // battery low (10%)
+     { 0x213,                        handleShellNotification                 },
+     { 0x214,                        handleShellNotification                 },
+     { 0x1000,                       handleNextApplicationDebuggedByForce    },
+@@ -257,6 +276,7 @@ int main(void)
+     Cheat_SeedRng(svcGetSystemTick());
+     ScreenFiltersMenu_LoadConfig();
+     SysConfigMenu_LoadConfig();
++    LedControl_Init();
+ 
+     MyThread *menuThread = menuCreateThread();
+     MyThread *taskRunnerThread = taskRunnerCreateThread();
