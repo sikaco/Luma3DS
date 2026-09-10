@@ -45,8 +45,11 @@ jobs:
           test "$revision" != "v0.0.0-0"
           test "$major" -ge 10
 
-          dkp-pacman -Syyu --noconfirm
-          dkp-pacman -S --needed --noconfirm 3ds-dev
+          # devkitpro/devkitarm:latest already contains devkitARM + libctru.
+          # Avoid dkp-pacman network refreshes here; they are unnecessary and
+          # make reproducible builds depend on pkg.devkitpro.org availability.
+          command -v arm-none-eabi-gcc
+          test -f "$DEVKITPRO/libctru/lib/libctru.a"
 
           apt-get update
           apt-get install -y --no-install-recommends \
@@ -67,7 +70,6 @@ jobs:
               git+https://github.com/TuxSH/firmtool.git
           fi
 
-          command -v arm-none-eabi-gcc
           command -v makerom
           command -v firmtool
           makerom -h >/dev/null 2>&1 || true
