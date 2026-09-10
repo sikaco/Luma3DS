@@ -27,6 +27,24 @@ jobs:
           echo "$DEVKITARM/bin" >> "$GITHUB_PATH"
           echo "/usr/local/bin" >> "$GITHUB_PATH"
 
+          # A GitHub fork does not necessarily expose the upstream release tags.
+          # Luma derives VERSION_MAJOR/MINOR/BUILD from `git describe`; without
+          # those tags it silently falls back to v0.0.0, which also breaks the
+          # MCU-backed boot configuration after the MCU RAM is cleared (for
+          # example after removing the battery). Always import official tags.
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://github.com/LumaTeam/Luma3DS.git
+          git fetch --force --tags upstream '+refs/tags/v*:refs/tags/v*'
+
+          revision="$(git describe --tags --match 'v[0-9]*' --abbrev=8)"
+          version="$(printf '%s' "$revision" | sed -E 's/^v([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')"
+          major="${version%%.*}"
+          echo "Luma revision: $revision"
+          echo "Luma version:  $version"
+          test -n "$revision"
+          test "$revision" != "v0.0.0-0"
+          test "$major" -ge 10
+
           dkp-pacman -Syyu --noconfirm
           dkp-pacman -S --needed --noconfirm 3ds-dev
 
